@@ -1909,10 +1909,6 @@ contract BasedOFT is OFT {
 
 pragma solidity ^0.8.0;
 
-interface IDEXPair {
-    function sync() external;
-}
-
 interface IDEXRouter {
     function factory() external pure returns (address);
 
@@ -1991,10 +1987,7 @@ contract AITMainToken is BasedOFT {
     address public TreasuryReceiver;
     address constant public DEAD = 0x000000000000000000000000000000000000dEaD;
     bool public feeStatus = false;
-    IDEXRouter public router;
-    IDEXPair public pairContract;
     address[] public _markerPairs;
-
     mapping(address => bool) public lpPairs;
     mapping(address => bool) _isFeeExempt;
 
@@ -2013,9 +2006,8 @@ contract AITMainToken is BasedOFT {
     uint256 constant masterTaxDivisor = 10000;
 
     constructor(address _router, address _lzEndpoint) BasedOFT("AIT Protocol", "AIT", _lzEndpoint){
-        router = IDEXRouter(_router);
+        IDEXRouter router = IDEXRouter(_router);
         address pair = IDEXFactory(router.factory()).createPair(router.WETH(), address(this));
-        pairContract = IDEXPair(pair);
         lpPairs[pair] = true;
         _approve(address(this), address(router), MAX);
         _approve(address(this), address(this), MAX);
@@ -2040,7 +2032,7 @@ contract AITMainToken is BasedOFT {
         emit ChangeFeeStatus(_status);
     }
 
-     function setExcludedFees(address account, bool enabled) public onlyOwner() {
+    function setExcludedFees(address account, bool enabled) public onlyOwner() {
         _isFeeExempt[account] = enabled;
     }
 
@@ -2077,8 +2069,9 @@ contract AITMainToken is BasedOFT {
         }
 
         if(durationTime >= 40 && durationTime < 86400 && firstTransactionTime != 0){
-            tax = 1000;
+            tax = 800;
         }
+        
         if(durationTime >= 86400  && firstTransactionTime != 0 ){
             tax = _tax;
         }
@@ -2088,11 +2081,12 @@ contract AITMainToken is BasedOFT {
     function takeFee(address sender, address recipient, uint256 amount) internal view returns (uint256) {
         uint256 fee = 0;
 
-        if(lpPairs[sender]){
+        if(lpPairs[recipient]){
             // SELL
             fee = amount * getTaxRate(_taxRates.sellFee) / masterTaxDivisor;
         }
-        if(lpPairs[recipient]){
+
+        if(lpPairs[sender]){
             // BUY
             fee = amount * getTaxRate(_taxRates.buyFee) / masterTaxDivisor;
         }
@@ -2111,6 +2105,7 @@ contract AITMainToken is BasedOFT {
         uint256 amount
     ) internal virtual override(ERC20) {
         uint256 amountFee = takeFee(from, to, amount);
+
         if(amountFee > 0){
             super._transfer(from, TreasuryReceiver, amountFee);
         }

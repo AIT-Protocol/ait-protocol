@@ -2001,18 +2001,23 @@ contract AITMainToken is BasedOFT {
         sellFee: 400
     });
 
+    Fees public _taxRatesFirstDay = Fees({
+        buyFee: 400,
+        sellFee: 1000
+    });
+
     uint256 constant public maxBuyTaxes = 2000;
     uint256 constant public maxSellTaxes = 2000;
     uint256 constant masterTaxDivisor = 10000;
 
-    constructor(address _router, address _lzEndpoint) BasedOFT("AIT Protocol", "AIT", _lzEndpoint){
+    constructor(address _router, address _lzEndpoint, address _treasuryReceiver) BasedOFT("AIT Protocol", "AIT", _lzEndpoint){
         IDEXRouter router = IDEXRouter(_router);
         address pair = IDEXFactory(router.factory()).createPair(router.WETH(), address(this));
         lpPairs[pair] = true;
         _approve(address(this), address(router), MAX);
         _approve(address(this), address(this), MAX);
 
-        TreasuryReceiver = msg.sender;
+        TreasuryReceiver = _treasuryReceiver;
         _isFeeExempt[TreasuryReceiver] = true;
         _isFeeExempt[address(this)] = true;
         _isFeeExempt[msg.sender] = true;
@@ -2043,6 +2048,13 @@ contract AITMainToken is BasedOFT {
         emit SetTaxes(buyFee, sellFee);
     }
 
+    function setTaxesFirstDay(uint16 buyFee, uint16 sellFee) external onlyOwner() {
+        require(buyFee <= maxBuyTaxes && sellFee <= maxSellTaxes, "Cannot exceed maximums.");
+        _taxRatesFirstDay.buyFee = buyFee;
+        _taxRatesFirstDay.sellFee = sellFee;
+        emit SetTaxesFirstDay(buyFee, sellFee);
+    }
+
     function setLpPair(address pair, bool enabled) external onlyOwner() {
         if (!enabled) {
             lpPairs[pair] = false;
@@ -2056,7 +2068,8 @@ contract AITMainToken is BasedOFT {
         return _isFeeExempt[account];
     }
 
-    function getTaxRate(uint256 _tax) internal view returns(uint256){
+    function getTaxRate(bool _status) internal view returns(uint256){
+        // buy : true , sell : false
         uint256 tax = 0;
         uint256 durationTime = block.timestamp - firstTransactionTime;
 
@@ -2069,11 +2082,11 @@ contract AITMainToken is BasedOFT {
         }
 
         if(durationTime >= 40 && durationTime < 86400 && firstTransactionTime != 0){
-            tax = 800;
+            tax = _status ? _taxRatesFirstDay.buyFee : _taxRatesFirstDay.sellFee;
         }
         
         if(durationTime >= 86400  && firstTransactionTime != 0 ){
-            tax = _tax;
+            tax = _status ? _taxRates.buyFee : _taxRates.sellFee;
         }
         return tax;
     }
@@ -2083,12 +2096,12 @@ contract AITMainToken is BasedOFT {
 
         if(lpPairs[recipient]){
             // SELL
-            fee = amount * getTaxRate(_taxRates.sellFee) / masterTaxDivisor;
+            fee = amount * getTaxRate(false) / masterTaxDivisor;
         }
 
         if(lpPairs[sender]){
             // BUY
-            fee = amount * getTaxRate(_taxRates.buyFee) / masterTaxDivisor;
+            fee = amount * getTaxRate(true) / masterTaxDivisor;
         }
 
         if(_isFeeExempt[sender] || _isFeeExempt[recipient] || feeStatus){
@@ -2121,6 +2134,6 @@ contract AITMainToken is BasedOFT {
     event ChangeTreasuryReceiver(address treasury);
     event ChangeFeeStatus(bool status);
     event SetTaxes(uint16 buyFee, uint16 sellFee);
-
+    event SetTaxesFirstDay(uint16 buyFee, uint16 sellFee);
     receive() external payable {}
 }
